@@ -1,3 +1,6 @@
+from orm import Model, StringField, IntegerField
+import asyncio, aiomysql
+
 @asyncio.coroutine
 def create_pool(loop, **kw):
 	logginh.info('create database connection pool...')
@@ -30,3 +33,16 @@ def select(sql, args, size=None):
 		logging.info('rows returned: %s' % len(rs))
 		return rs
 		
+@asyncio.coroutine
+def execute(sql, args):
+	log(sql)
+	with(yield from __pool) as coon:
+		try:
+			cur = yield from conn.cursor()
+			yield from cur.execute(sql.replace('?', '%s'), args)
+			affected = cur.rowcount
+			yield from cur.close()
+		except BaseException as e:
+			raise
+		return affected
+	
