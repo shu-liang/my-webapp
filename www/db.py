@@ -1,4 +1,3 @@
-from orm import Model, StringField, IntegerField
 import asyncio, aiomysql
 
 @asyncio.coroutine
