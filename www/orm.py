@@ -1,8 +1,12 @@
 import asyncio, aiomysql
+import logging; logging.basicConfig(level=logging.INFO)
 
+def log(sql, args=()):
+	logging.info('SQL: %s' % sql)
+	
 @asyncio.coroutine
 def create_pool(loop, **kw):
-	logginh.info('create database connection pool...')
+	logging.info('create database connection pool...')
 	global __pool
 	__pool = yield from aiomysql.create_pool(
 		host=kw.get('host','localhost'),
@@ -16,7 +20,12 @@ def create_pool(loop, **kw):
 		minsize=kw.get('minsize', 1),
 		loop=loop
 	)
-	
+async def destory_pool():
+	global __pool
+	if __pool is not None :
+		__pool.close()
+		await __pool.wait_closed()
+		
 @asyncio.coroutine
 def select(sql, args, size=None):
 	log(sql, args)
@@ -35,7 +44,7 @@ def select(sql, args, size=None):
 @asyncio.coroutine
 def execute(sql, args):
 	log(sql)
-	with(yield from __pool) as coon:
+	with(yield from __pool) as conn:
 		try:
 			cur = yield from conn.cursor()
 			yield from cur.execute(sql.replace('?', '%s'), args)
@@ -59,12 +68,30 @@ class StringField(Field):
 	def __init__(self, name=None, primary_key=False, default=None, ddl='varchar(100)'):
 		super().__init__(name, ddl, primary_key, default)
 
-class ModelMetaclass(type):
+class BooleanField(Field):
+	def __init__(self, name=None, primary_key=False, default=0, ddl='bool'):
+		super().__init__(name, ddl, primary_key, default)
+
+class FloatField(Field):
+	def __init__(self, name=None, primary_key=False, default=None, ddl='float'):
+		super().__init__(name, ddl, primary_key, default)
+
+class TextField(Field):
+	def __init__(self, name=None, primary_key=False, default=None, ddl='mediumtext'):
+		super().__init__(name, ddl, primary_key, default)
+
+def create_args_string(num):
+	L = []
+	for n in range(num):
+		L.append('?')
+	return ', '.join(L)
+		
+class ModelMetaclass(type):	
 	def __new__(cls, name, bases, attrs):
-		if name = 'Model':
+		if name == 'Model':
 			return type.__new__(cls, name, bases, attrs)
 		tableName = attrs.get('__table__', None) or name
-		logging.info('found model: %s (table: %s)' % (name, tableName)
+		logging.info('found model: %s (table: %s)' % (name, tableName))
 		mappings = dict()
 		fields = []
 		primaryKey = None
@@ -80,17 +107,17 @@ class ModelMetaclass(type):
 					fields.append(k)
 		if not primaryKey:
 			raise RuntimeError('Primary key not found')
-		for k in mapping.keys():
+		for k in mappings.keys():
 			attrs.pop(k)
 		escaped_fields = list(map(lambda f: '`%s`' % f, fields))
-		attrs['__mapping'] = mappings
+		attrs['__mapping__'] = mappings
 		attrs['__table__'] = tableName
 		attrs['__primary_key__'] = primaryKey
 		attrs['__fields__'] = fields
 		attrs['__select__'] = 'select `%s`, %s from `%s`' % (primaryKey, ','.join(escaped_fields), tableName)
 		attrs['__insert__'] = 'insert into `%s` (%s, `%s`) values (%s)' % (tableName, ', '.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
-        attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (tableName, ', '.join(map(lambda f: '`%s`=?' % (mappings.get(f).name or f), fields)), primaryKey)
-        attrs['__delete__'] = 'delete from `%s` where `%s`=?' % (tableName, primaryKey)
+		attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (tableName, ', '.join(map(lambda f: '`%s`=?' % (mappings.get(f).name or f), fields)), primaryKey)
+		attrs['__delete__'] = 'delete from `%s` where `%s`=?' % (tableName, primaryKey)
 		return type.__new__(cls, name, bases, attrs)
 		
 class Model(dict, metaclass=ModelMetaclass):
@@ -112,12 +139,13 @@ class Model(dict, metaclass=ModelMetaclass):
 	def getValueOrDefault(self, key):
 		value = getattr(self, key, None)
 		if value is None:
-			field = self.__mappings__[key]
+			field = self.__mapping__[key]
 			if field.default is not None:
 				value = field.default() if callable(field.default) else field.default
 				logging.debug('using default value for %s:%s' % (key, str(value)))
 				setattr(self, key, value)
 		return value
+	
 	@classmethod
 	@asyncio.coroutine
 	def find(cls, pk):
@@ -129,7 +157,7 @@ class Model(dict, metaclass=ModelMetaclass):
 	@asyncio.coroutine
 	def save(self):
 		args = list(map(self.getValueOrDefault, self.__fields__))
-		args = append(self.getValueOrDefault(self.__primary_key__))
+		args.append(self.getValueOrDefault(self.__primary_key__))
 		rows = yield from execute(self.__insert__, args)
 		if rows != 1:
 			logging.warn('failed to insert record: affected rows: %s' % rows)
