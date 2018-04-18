@@ -1,9 +1,17 @@
+import asyncio, os, inspect, logging, functools
+
+from urllib import parse
+
+from aiohttp import web
+
+#from apis import APIError
+
 def get(path):
     '''
     Define decorator @get('/path')
     '''
     def decorator(func):
-        @funtools.wraps(func)
+        @functools.wraps(func)
         def wrapper(*args, **kw):
             return fun(*args, **kw)
         wrapper.__method__ = 'GET'
@@ -16,7 +24,7 @@ def post(path):
     Define decorator @post('/path')
     '''
     def decorator(func):
-        @funtools.wraps(func)
+        @functools.wraps(func)
         def wrapper(*args, **kw):
             return fun(*args, **kw)
         wrapper.__method__ = 'POST'
@@ -127,12 +135,16 @@ class RequestHandler(object):
         except APIError as e:
             return dict(error=e.error, data=e.data, message=e.message)
         
-
+def add_static(app):
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+    app.router.add_static('/static/', path)
+    logging.info('add static %s => %s' % ('/static/', path))
+    
 def add_route(app, fn):
     method = getattr(fn, '__method__', None)
     path = getattr(fn, '__route__', None)
-    if path is None or method i None:
-        raise ValueError('@get or @post not defined in %s.' % str(fn)
+    if path is None or method is None:
+        raise ValueError('@get or @post not defined in %s.' % str(fn))
     if not asyncio.iscoroutinefunction(fn) and not inspect.isgeneratorfunction(fn):
         fn = asyncio.coroutine(fn)
     loggingg.info('add route %s %s => %s(%s)' % (method, path, fn.__name__, ', '.join(inspect.signature(fn).parameters.keys())))
@@ -150,7 +162,7 @@ def add_routes(app, module_name):
             continue
         fn = getattr(mod, attr)
         if callable(fn):
-            mothod = getattr(fn, '__mothod__', None)
+            method = getattr(fn, '__mothod__', None)
             path = getattr(fn, '__route__', None)
             if method and path:
                 add_route(app, fn)
