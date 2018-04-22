@@ -1,5 +1,6 @@
 import logging; logging.basicConfig(level=logging.INFO)
 
+from config import configs
 import asyncio, os, json, time
 from datetime import datetime
 
@@ -105,6 +106,7 @@ def datetime_filter(t):
     
 @asyncio.coroutine
 def init(loop):
+	yield from orm.create_pool(loop=loop, **configs.db)
 	app = web.Application(loop=loop, middlewares=[
 		logger_factory, response_factory
 	])
